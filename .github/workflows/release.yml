@@ -1,0 +1,71 @@
+name: Build and Release
+on: { push: { tags: [ "v*" ] } }
+permissions: { contents: write }
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup JQ
+        uses: dcarbone/install-jq-action@v2
+      - name: Purge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api repos/TonyBogdanov/vaultr/actions/runs --paginate | \
+          jq '.workflow_runs[] | .id' | \
+          xargs -t -I{} sh -c "gh api -X DELETE /repos/TonyBogdanov/vaultr/actions/runs/{} || true"
+
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        goos: [ linux, windows, darwin ]
+        goarch: [ 386, amd64, arm64 ]
+        exclude:
+          - goos: darwin
+            goarch: 386
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup GO
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p dist
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
+          go build -o dist/vaultr-${{ matrix.goos }}-${{ matrix.goarch }}$EXT ./cmd/vaultr
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vaultr-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
