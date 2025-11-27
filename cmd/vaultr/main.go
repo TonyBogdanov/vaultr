@@ -1,7 +1,7 @@
 package main
 
-import "fmt"
+import "vaultr/internal/cli"
 
 func main() {
-	fmt.Println("vaultr CLI")
+	cli.Execute()
 }
